@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+cmake_minimum_required(VERSION 3.20)
+project(holoscan_benchmark_scheduler_throuhgput_greedy CXX)
+
+include(CTest)
+
+find_package(holoscan REQUIRED CONFIG
+             PATHS "/opt/nvidia/holoscan" "/workspace/holoscan-sdk/install")
+
+add_executable(benchmark_scheduler_throuhgput_greedy
+  benchmark_scheduler_throuhgput_greedy.cpp
+)
+
+target_link_libraries(benchmark_scheduler_throuhgput_greedy
+  PRIVATE
+  holoscan::core
+)
+
+if(BUILD_TESTING)
+  add_test(NAME EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUHGPUT_GREEDY_TEST
+           COMMAND benchmark_scheduler_throuhgput_greedy
+           WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUHGPUT_GREEDY_TEST PROPERTIES
+                       PASS_REGULAR_EXPRESSION "GreedyScheduler Throughput Benchmark Results"
+                       TIMEOUT 120)
+
+  add_test(NAME EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUHGPUT_GREEDY_BUSY_WAIT_TEST
+           COMMAND benchmark_scheduler_throuhgput_greedy --busy_wait
+           WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUHGPUT_GREEDY_BUSY_WAIT_TEST PROPERTIES
+                       PASS_REGULAR_EXPRESSION "Operator: BusyWaitCountOp"
+                       TIMEOUT 120)
+
+  add_test(NAME EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUHGPUT_GREEDY_HELP_TEST
+           COMMAND benchmark_scheduler_throuhgput_greedy --help
+           WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUHGPUT_GREEDY_HELP_TEST PROPERTIES
+                       PASS_REGULAR_EXPRESSION "Usage:"
+                       TIMEOUT 10)
+endif()

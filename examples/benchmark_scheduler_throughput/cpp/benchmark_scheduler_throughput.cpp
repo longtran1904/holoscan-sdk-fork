@@ -148,13 +148,25 @@ int main(int argc, char** argv) {
   };
 
   // Construct trial options to benchmark: {num_threads, num_operators}.
+  // Default:
+  //   std::vector<BenchmarkSchedulerThroughputApp::Options> trial_options = {
+  //       make_trial_options(1, 1),
+  //       make_trial_options(2, 2),
+  //       make_trial_options(4, 4),
+  //       make_trial_options(8, 8),
+  //       make_trial_options(16, 16),
+  //       make_trial_options(2, 8),
+  //   };
+
   std::vector<BenchmarkSchedulerThroughputApp::Options> trial_options = {
-      make_trial_options(1, 1),
-      make_trial_options(2, 2),
-      make_trial_options(4, 4),
-      make_trial_options(8, 8),
+      make_trial_options(1, 16),
+      make_trial_options(2, 16),
+      make_trial_options(4, 16),
+      make_trial_options(8, 16),
+      make_trial_options(10, 16),
+      make_trial_options(12, 16),
+      make_trial_options(14, 16),
       make_trial_options(16, 16),
-      make_trial_options(2, 8),
   };
   std::vector<BenchmarkSchedulerThroughputApp::Results> trial_results;
 
