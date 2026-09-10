@@ -2,6 +2,7 @@
 
 This folder includes the following scripts:
 
+- [`benchmark_scheduler.py`](#benchmark_schedulerpy)
 - [`check_copyright.py`](#check_copyrightpy)
 - [`convert_gxf_entities_to_images.py`](#convert_gxf_entities_to_imagespy)
 - [`convert_gxf_entities_to_video.py`](#convert_gxf_entities_to_videopy)
@@ -17,6 +18,104 @@ This folder includes the following scripts:
 
 > Note: these will be included in the SDK installation at `/opt/nvidia/holoscan/bin`
 
+____
+
+## benchmark_scheduler.py
+
+Incrementally builds the event-based and greedy C++ throughput benchmarks, runs ten
+configurations sequentially, and writes a combined CSV, a 3×2 comparison PNG, and six standalone panel PNGs.
+
+Use an existing configured SDK build from this checkout with
+`HOLOSCAN_BUILD_EXAMPLES=ON` and `HOLOSCAN_CPP_EXAMPLES=ON`.
+To reuse the running container you opened with `./run launch --cuda 13`, find its
+name with `docker ps`, then run this on the host from the repository root:
+
+```bash
+python3 scripts/benchmark_scheduler.py --container CONTAINER_NAME \
+  --build-dir build-cuda13 \
+  --output build-cuda13/benchmark-results-2/scheduler.csv
+```
+
+`--container` accepts an existing container name or ID. The script checks that it
+is running and bind-mounts this checkout, maps build paths through that mount, and
+uses `docker exec` for both CMake and each benchmark. It pins the inspected
+container ID for the whole run. It never launches or replaces a container.
+CSV files and plots are written by the host Python process, so Matplotlib is only
+needed on the host in this mode. If the host's user-site NumPy conflicts with
+system Matplotlib, prefix the command with `PYTHONNOUSERSITE=1`.
+The container needs `python3`: a small supervisor terminates its command's process
+group if the Docker client disconnects, including when you interrupt the script.
+
+You can also run directly in your existing container's shell:
+
+```bash
+python3 scripts/benchmark_scheduler.py --build-dir build-cuda13
+```
+
+Without `--container`, CMake and the benchmarks execute locally using the calling
+shell's environment, and Matplotlib must be installed there. The runner checks
+for Matplotlib before building and does not install dependencies.
+
+`--build-dir` is required; relative build paths resolve from the repository root
+where Python runs. With `--container`, the build must be inside this checkout's
+bind mount; pass the host path, not `/workspace/holoscan-sdk/...`.
+Optional `--jobs N` controls CMake build parallelism; omitting it keeps the build
+tool's default. CMake reconfiguration reuses the existing cache, registers the
+corrected `benchmark_scheduler_throughput_greedy` target, and refreshes the supplied
+GXF libraries. Incremental dependency tracking rebuilds changed sources, headers,
+and linked SDK dependencies. GXF source compilation is external; the runner uses
+the package already configured in the SDK build.
+
+Benchmarks run from the repository root. Both modes prepend the selected build's
+`lib` and `lib64` (plus a custom build-local `CMAKE_INSTALL_LIBDIR`, if configured)
+to `LD_LIBRARY_PATH` and `HOLOSCAN_LIB_PATH`. Container mode inherits the
+container's startup environment; it does not forward host library paths or source
+shell startup files. Exports made later in an interactive shell are local to that
+shell: run the script from that shell without `--container` to inherit them.
+Each benchmark prints its command, including the library overrides, so you can
+repeat it manually with the same paths and flags. Reusing a container does not
+guarantee identical throughput: output capture, workload order, and runtime
+variation still affect comparisons.
+
+Event-based runs keep 16 operators and use 1, 2, 4, 8, 10, 12, 13, 14, and 16 worker
+threads, comparing default, queue stealing, postcheck fastpath, and both flags.
+The four normal configurations run first, then the same four with `--busy_wait`,
+then greedy normal and busy-wait. Event-based normal runs use 100,000 operations
+per operator; greedy normal runs 10,000,000 operations per operator.
+Both schedulers use 1,000 operations per operator with `--busy_wait`, with an
+active wait of at least 1 ms before each increment.
+Event-based busy-wait trials therefore each report exactly 16,000 operations.
+Greedy runs use 1, 2, 4, 8, 12, 14, and 16 operators on one scheduler thread.
+Each configuration runs once, without additional repetitions or warmups.
+
+The default output is a unique `scheduler-*.csv` under
+`<build-dir>/benchmark-results/`. `--output PATH.csv` selects a new CSV path,
+relative to the current working directory; existing CSV/PNG files are not overwritten.
+The overview PNG uses the same directory and stem. Six standalone PNGs use that
+stem with these suffixes: `-event-throughput-normal`, `-event-improvement-normal`,
+`-event-throughput-busy-wait`, `-event-improvement-busy-wait`, `-greedy-normal`,
+and `-greedy-busy-wait`. All output paths are printed on completion.
+The first two panel rows show event-based throughput and its ratio to the matching
+default trial, separately for normal and busy-wait workloads. Baselines match only
+within the same workload and trial coordinates. The bottom row shows greedy normal
+and busy-wait throughput on separate scales. A labeled horizontal line on the
+event-based busy-wait throughput panel shows greedy throughput at one operator
+and 1,000 operations as a reference.
+
+CSV columns are `scheduler`, `queue_stealing`, `postcheck_fastpath`, `busy_wait`,
+`trial`, `threads`, `operators`, `total_operations`, and `throughput_hz`.
+Scheduler values are `event_based` and `greedy`. `busy_wait` is always `0` or `1`.
+Queue-stealing and fastpath flags use `0`/`1` for event-based rows and are blank
+for greedy. Current workloads produce 86 rows. Benchmark output is streamed, and each successful configuration is flushed to CSV. Failure stops
+the runner with a nonzero status and reports the partial CSV if one exists. The
+comparison figure is generated only after all ten runs succeed; a plotting error
+preserves the complete CSV.
+
+Run focused tests with:
+
+```bash
+python3 -m unittest discover -s scripts -p test_benchmark_scheduler.py
+```
 ____
 
 ## convert_gxf_entities_to_images.py

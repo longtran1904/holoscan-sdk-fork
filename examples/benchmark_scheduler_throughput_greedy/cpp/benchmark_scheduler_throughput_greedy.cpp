@@ -136,14 +136,14 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const std::vector<int> operator_counts = {1, 2, 4, 8, 16};
+  const std::vector<int> operator_counts = {1, 2, 4, 8, 12, 14, 16};
   std::vector<BenchmarkSchedulerThroughputGreedyApp::Results> trial_results;
 
   for (const int num_operators : operator_counts) {
     BenchmarkSchedulerThroughputGreedyApp::Options options;
     options.num_operators = num_operators;
     options.busy_wait = busy_wait;
-    options.num_operations = busy_wait ? 1000 : 100000;
+    options.num_operations = busy_wait ? 1000 : 10000000;
 
     auto app = holoscan::make_application<BenchmarkSchedulerThroughputGreedyApp>();
     app->set_options(options);

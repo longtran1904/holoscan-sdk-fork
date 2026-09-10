@@ -64,4 +64,19 @@ if(HOLOSCAN_BUILD_TESTS)
                        PASS_REGULAR_EXPRESSION "\\| Trial \\|"
                        TIMEOUT 120
                       )
+
+  add_test(NAME EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUGHPUT_BUSY_WAIT_TEST
+           COMMAND benchmark_scheduler_throughput --busy_wait)
+  add_test(NAME EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUGHPUT_BUSY_WAIT_FLAGS_TEST
+           COMMAND benchmark_scheduler_throughput --busy_wait
+                   --enable_queue_stealing --enable_postcheck_fastpath)
+  set_tests_properties(
+    EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUGHPUT_BUSY_WAIT_TEST
+    EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUGHPUT_BUSY_WAIT_FLAGS_TEST
+    PROPERTIES PASS_REGULAR_EXPRESSION "\\| +16000 +\\|" TIMEOUT 120)
+
+  add_test(NAME EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUGHPUT_HELP_TEST
+           COMMAND benchmark_scheduler_throughput --help)
+  set_tests_properties(EXAMPLE_CPP_BENCHMARK_SCHEDULER_THROUGHPUT_HELP_TEST
+                       PROPERTIES PASS_REGULAR_EXPRESSION "--busy_wait" TIMEOUT 120)
 endif()
