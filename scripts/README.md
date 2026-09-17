@@ -23,7 +23,8 @@ ____
 ## benchmark_scheduler.py
 
 Incrementally builds the event-based and greedy C++ throughput benchmarks, runs ten
-configurations sequentially, and writes a combined CSV, a 3×2 comparison PNG, and six standalone panel PNGs.
+configurations sequentially, and writes a combined CSV, a 3×2 comparison PNG, six
+standalone panel PNGs, and operator-progress logs and graphs.
 
 Use an existing configured SDK build from this checkout with
 `HOLOSCAN_BUILD_EXAMPLES=ON` and `HOLOSCAN_CPP_EXAMPLES=ON`.
@@ -31,10 +32,35 @@ To reuse the running container you opened with `./run launch --cuda 13`, find it
 name with `docker ps`, then run this on the host from the repository root:
 
 ```bash
-python3 scripts/benchmark_scheduler.py --container CONTAINER_NAME \
+python3 scripts/benchmark_scheduler/benchmark_scheduler.py --container CONTAINER_NAME \
   --build-dir build-cuda13 \
   --output build-cuda13/benchmark-results-2/scheduler.csv
 ```
+
+The stages can also run independently:
+
+```bash
+python3 scripts/benchmark_scheduler/benchmark_scheduler.py build --build-dir build-cuda13 --jobs 8
+python3 scripts/benchmark_scheduler/benchmark_scheduler.py run --build-dir build-cuda13 --output results.csv
+python3 scripts/benchmark_scheduler/benchmark_scheduler.py plot --input results.csv
+python3 scripts/benchmark_scheduler/benchmark_scheduler.py plot --input results.csv --output-dir regenerated
+python3 -m scripts.benchmark_scheduler all --build-dir build-cuda13
+```
+
+Omitting the subcommand selects `all`. Build validates the cache and builds both
+targets. Run requires existing executables and does not invoke CMake. Build and
+run do not require Matplotlib. Plot requires Matplotlib, but needs neither Docker
+nor a configured build. It validates all ten configurations in the saved CSV.
+Plot discovers `<csv-stem>-progress-logs/` beside the input CSV; if absent, it
+produces throughput graphs only. `--progress-logs DIR` selects logs explicitly;
+missing explicit logs, incomplete directories, or malformed logs are errors.
+Plots go beside the CSV unless `--output-dir` is supplied. Existing destination
+artifacts are refused. Input, output, and progress paths are relative to the
+calling directory; build paths are relative to the repository root, even when
+the script is invoked from another directory.
+
+The package separates `preparation`, `execution`, and `analysis`, with shared
+`data` and command `infrastructure`. `benchmark_cli.py` composes the stages.
 
 `--container` accepts an existing container name or ID. The script checks that it
 is running and bind-mounts this checkout, maps build paths through that mount, and
@@ -49,12 +75,12 @@ group if the Docker client disconnects, including when you interrupt the script.
 You can also run directly in your existing container's shell:
 
 ```bash
-python3 scripts/benchmark_scheduler.py --build-dir build-cuda13
+python3 scripts/benchmark_scheduler/benchmark_scheduler.py --build-dir build-cuda13
 ```
 
 Without `--container`, CMake and the benchmarks execute locally using the calling
-shell's environment, and Matplotlib must be installed there. The runner checks
-for Matplotlib before building and does not install dependencies.
+shell's environment. The full workflow checks Matplotlib before building and
+does not install dependencies.
 
 `--build-dir` is required; relative build paths resolve from the repository root
 where Python runs. With `--container`, the build must be inside this checkout's
@@ -66,7 +92,10 @@ GXF libraries. Incremental dependency tracking rebuilds changed sources, headers
 and linked SDK dependencies. GXF source compilation is external; the runner uses
 the package already configured in the SDK build.
 
-Benchmarks run from the repository root. Both modes prepend the selected build's
+Event-based benchmarks run in a fresh temporary working directory under the
+selected build directory, mapped through the checkout's bind mount in container
+mode. This keeps logs from earlier runs out of the results. Greedy benchmarks run
+from the repository root. Both modes prepend the selected build's
 `lib` and `lib64` (plus a custom build-local `CMAKE_INSTALL_LIBDIR`, if configured)
 to `LD_LIBRARY_PATH` and `HOLOSCAN_LIB_PATH`. Container mode inherits the
 container's startup environment; it does not forward host library paths or source
@@ -90,7 +119,8 @@ Each configuration runs once, without additional repetitions or warmups.
 
 The default output is a unique `scheduler-*.csv` under
 `<build-dir>/benchmark-results/`. `--output PATH.csv` selects a new CSV path,
-relative to the current working directory; existing CSV/PNG files are not overwritten.
+relative to the current working directory; existing CSV/PNG files and either
+progress output directory are not overwritten.
 The overview PNG uses the same directory and stem. Six standalone PNGs use that
 stem with these suffixes: `-event-throughput-normal`, `-event-improvement-normal`,
 `-event-throughput-busy-wait`, `-event-improvement-busy-wait`, `-greedy-normal`,
@@ -102,14 +132,50 @@ and busy-wait throughput on separate scales. A labeled horizontal line on the
 event-based busy-wait throughput panel shows greedy throughput at one operator
 and 1,000 operations as a reference.
 
+For total worker count Y<=8, the event-based example puts all 16 operators in
+its default shared pool with Y workers. For Y>8, X=16-Y workers handle the first
+2X operator IDs in the shared pool. The remaining 16-2X operators use the remaining
+Y-X workers in the secondary pool (one operator per worker).
+
+For 8<Y<16, shared operators use the default pool and secondary operators are
+pinned one per worker in a named `secondary` pool. At Y=16 there are no shared
+operators or workers; all 16 operators use the default pool, labeled secondary.
+This avoids allocating any unused shared workers. Total worker count remains Y.
+Greedy runs are unchanged. New log headers declare `pool_assignment: "shared-twice"`
+and explicitly describe the binding in `pool_binding`; the parser retains support
+for the earlier shared-eight and GCD assignments.
+
+Progress outputs are generated automatically for the final normal and final
+busy-wait event-based configurations, with both queue stealing and postcheck
+fastpath enabled. Logs are preserved in `<csv-stem>-progress-logs/`. Each log
+starts with a `# ` JSON header containing `threads`, `shared_threads`,
+`secondary_threads`, `checkpoint_operations`, and `operator_pools` (indexed by
+operator ID). Subsequent rows contain `operator ID,elapsed milliseconds`.
+
+`<csv-stem>-progress-plots/` receives individual PNGs with pool membership in the
+legends, separate normal and busy-wait overview PNG/SVG files, a multipage PDF,
+and a README. Colors and line styles identify operators consistently. Each
+workload's overview uses identical axes across its panels. Pool sizes appear in
+panel titles; pool membership can change between panels.
+
+Progress charts measure elapsed milliseconds from each operator's own start.
+Normal workloads record every 10,000 operations; busy-wait workloads record every
+100 operations, producing ten checkpoints per operator in both workloads.
+The parser also accepts the legacy two-column logs without metadata.
+
 CSV columns are `scheduler`, `queue_stealing`, `postcheck_fastpath`, `busy_wait`,
 `trial`, `threads`, `operators`, `total_operations`, and `throughput_hz`.
 Scheduler values are `event_based` and `greedy`. `busy_wait` is always `0` or `1`.
 Queue-stealing and fastpath flags use `0`/`1` for event-based rows and are blank
-for greedy. Current workloads produce 86 rows. Benchmark output is streamed, and each successful configuration is flushed to CSV. Failure stops
-the runner with a nonzero status and reports the partial CSV if one exists. The
-comparison figure is generated only after all ten runs succeed; a plotting error
-preserves the complete CSV.
+for greedy. Current workloads produce 86 rows. Benchmark output is streamed, and
+each successful configuration is flushed to CSV. Failure stops the runner with a nonzero status and reports the partial CSV if one exists.
+Collected progress logs and flushed CSV results are preserved if a later
+benchmark or plotting step fails. Throughput and progress graphs are generated
+only after all ten runs succeed, keeping plotting overhead out of measurements;
+a plotting error preserves the complete CSV and collected logs. Missing progress
+files, malformed checkpoints, and empty normal-workload logs are errors. Progress
+validation checks operator IDs, expected checkpoint counts, and nonnegative,
+nondecreasing timestamps; equal timestamps are valid at millisecond resolution.
 
 Run focused tests with:
 

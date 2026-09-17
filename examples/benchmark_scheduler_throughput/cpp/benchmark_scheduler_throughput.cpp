@@ -148,7 +148,8 @@ class BenchmarkSchedulerThroughputApp : public holoscan::Application {
         "scheduler",
         holoscan::Arg("worker_thread_number", static_cast<int64_t>(options_.num_threads)),
         holoscan::Arg("enable_queue_stealing", options_.enable_queue_stealing),
-        holoscan::Arg("enable_worker_postcheck_fastpath", options_.enable_postcheck_fastpath)));
+        holoscan::Arg("enable_worker_postcheck_fastpath", options_.enable_postcheck_fastpath),
+        holoscan::Arg("log_perf_stats", true)));
   }
 
   Results results() {
