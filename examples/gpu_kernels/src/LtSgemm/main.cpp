@@ -21,37 +21,40 @@
 #include <cstdio>
 
 int main() {
-    TestBench<float> props(CUBLAS_OP_N, CUBLAS_OP_N, 4, 4, 4, 2.0f, 0.0f);
+  constexpr int n = 128;
+  constexpr int k = 128;
+  constexpr int maxM = 1 << 16;
+  constexpr int nRepeats = 1000;
 
-    props.Ahost = {
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      0, 0, 0, 1
-    };
-     
-    props.Bhost = {
-      1, 2, 3, 4,
-      5, 6, 7, 8,
-      9, 10, 11, 12,
-      13, 14, 15, 16
-    };
+  for (int m = 128; m <= maxM; m *= 2) {
+    TestBench<float> props(CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, 2.0f, 0.0f);
 
-    props.run([&props] {
-        LtSgemm(props.ltHandle, props.transa, props.transb, props.m, props.n, props.k, &props.alpha, props.Adev,
-                props.lda, props.Bdev, props.ldb, &props.beta, props.Cdev, props.ldc, props.workspace,
-                props.workspaceSize);
+    float averageUs = 0.0f;
+    props.run([&props, &averageUs] {
+      averageUs = LtSgemmBench(props.ltHandle,
+                               props.transa,
+                               props.transb,
+                               props.m,
+                               props.n,
+                               props.k,
+                               &props.alpha,
+                               props.Adev,
+                               props.lda,
+                               props.Bdev,
+                               props.ldb,
+                               &props.beta,
+                               props.Cdev,
+                               props.ldc,
+                               props.workspace,
+                               props.workspaceSize,
+                               nRepeats);
     });
 
-    // run() copies the result to the host and waits for completion.
-    // cuBLAS stores matrices in column-major order.
-    std::printf("Result C (%d x %d):\n", props.m, props.n);
-    for (int row = 0; row < props.m; ++row) {
-        for (int col = 0; col < props.n; ++col) {
-            std::printf("%10.2f ", props.Chost[row + col * props.ldc]);
-        }
-        std::printf("\n");
-    }
+    // Two FLOPs per multiply-add; averageUs is in microseconds.
+    const double tflops = (2.0 * m * n * k) / (averageUs * 1e6);
+    std::printf("GEMM (M=%d, N=%d, K=%d): %.3f us, %.3f TFLOP/s\n",
+                m, n, k, averageUs, tflops);
+  }
 
-    return 0;
+  return 0;
 }

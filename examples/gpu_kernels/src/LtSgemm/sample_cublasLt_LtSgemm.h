@@ -39,3 +39,16 @@ void LtSgemm(cublasLtHandle_t ltHandle,
              int ldc,
              void *workspace,
              size_t workspaceSize);
+
+// Average GPU time in microseconds. Repeated GEMMs update C in place.
+float LtSgemmBench(cublasLtHandle_t ltHandle,
+                  cublasOperation_t transa,
+                  cublasOperation_t transb,
+                  int m, int n, int k,
+                  const float *alpha,
+                  const float *A, int lda,
+                  const float *B, int ldb,
+                  const float *beta,
+                  float *C, int ldc,
+                  void *workspace, size_t workspaceSize,
+                  int nRepeats = 20);
