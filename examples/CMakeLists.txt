@@ -44,6 +44,11 @@ include(CTest)
 # C++ only examples
 if(HOLOSCAN_CPP_EXAMPLES)
   add_subdirectory(benchmark_deadline_priority)
+  # This source-preserving experiment inherits the standalone baseline's toolkit requirements.
+  option(HOLOSCAN_BUILD_LTSGEMM_BENCHMARK "Build the source-tree LtSgemm overhead experiment" OFF)
+  if(HOLOSCAN_BUILD_LTSGEMM_BENCHMARK)
+    add_subdirectory(benchmark_ltsgemm)
+  endif()
   add_subdirectory(benchmark_message_passing)
   add_subdirectory(benchmark_scheduler_throughput)
   add_subdirectory(benchmark_scheduler_throughput_greedy)
