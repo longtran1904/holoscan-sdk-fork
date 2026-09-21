@@ -18,6 +18,9 @@
 #include <cublasLt.h>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <cstdio>
+#include <memory>
 #include <vector>
 
 #include "sample_cublasLt_LtSgemm.h"
@@ -28,26 +31,34 @@ namespace {
 // Own scratch resources, including partially initialized resources on errors.
 struct BenchResources {
     void *cache = nullptr;
+    cudaStream_t stream = nullptr;
+    cublasLtHandle_t handle = nullptr;
     std::vector<cudaEvent_t> starts, ends;
 
     ~BenchResources() {
         for (auto event : starts) if (event) cudaEventDestroy(event);
         for (auto event : ends) if (event) cudaEventDestroy(event);
         if (cache) cudaFree(cache);
+        if (handle) cublasLtDestroy(handle);
+        if (stream) cudaStreamDestroy(stream);
     }
 };
 
-// f must enqueue its work on the default stream. Returns microseconds.
-template <typename F>
-LtSgemmBenchResult doBenchCuda(F f, int nRepeats, bool flushL2Cache) {
+// f must enqueue its work on the shared stream. Returns microseconds.
+template <typename F, typename Factory>
+LtSgemmBenchResult doBenchCuda(F f, Factory makeBench, int nRepeats, bool flushL2Cache,
+                                cudaStream_t stream) {
   if (nRepeats <= 0) {
     throw std::invalid_argument("repeats must be positive");
   }
 
   // Warm up the GPU with a large GEMM before collecting any timings.
   {
-    TestBench<float> warmup(CUBLAS_OP_N, CUBLAS_OP_N, 4096, 4096, 4096);
+    TestBench<float> warmup(CUBLAS_OP_N, CUBLAS_OP_N, 4096, 4096, 4096,
+                            1.0f, 0.0f, 4 * 1024 * 1024, 1, false, false, false, stream);
     warmup.run([&] {
+      // LtSgemm uses stream 0; explicitly order it with the shared copy stream.
+      warmup.streamSynchronize();
       LtSgemm(warmup.ltHandle,
               warmup.transa,
               warmup.transb,
@@ -64,6 +75,7 @@ LtSgemmBenchResult doBenchCuda(F f, int nRepeats, bool flushL2Cache) {
               warmup.ldc,
               warmup.workspace,
               warmup.workspaceSize);
+      checkCudaStatus(cudaDeviceSynchronize());
     });
     checkCudaStatus(cudaDeviceSynchronize());
   }
@@ -84,7 +96,7 @@ LtSgemmBenchResult doBenchCuda(F f, int nRepeats, bool flushL2Cache) {
 
   auto flushCache = [&] {
     // Cache eviction attempt, not an architectural guarantee of a cold L2.
-    checkCudaStatus(cudaMemsetAsync(resources.cache, 0, cacheSize, 0));
+    checkCudaStatus(cudaMemsetAsync(resources.cache, 0, cacheSize, stream));
     checkCudaStatus(cudaDeviceSynchronize());
   };
 
@@ -97,11 +109,19 @@ LtSgemmBenchResult doBenchCuda(F f, int nRepeats, bool flushL2Cache) {
   checkCudaStatus(cudaDeviceSynchronize());
 
   for (int i = 0; i < nRepeats; ++i) {
-    if (flushL2Cache)
-      flushCache();
-    checkCudaStatus(cudaEventRecord(resources.starts[i], 0));
-    f();
-    checkCudaStatus(cudaEventRecord(resources.ends[i], 0));
+    // Construction allocates fresh host/device buffers and a cuBLASLt handle.
+    // run() copies inputs and outputs; destruction frees buffers but keeps the shared stream.
+    auto props = makeBench();
+    props->run([&] {
+      // Complete input copies before timing GEMM on the same shared stream.
+      props->streamSynchronize();
+      if (flushL2Cache)
+        flushCache();
+      checkCudaStatus(cudaEventRecord(resources.starts[i], stream));
+      f(*props);
+      checkCudaStatus(cudaEventRecord(resources.ends[i], stream));
+      checkCudaStatus(cudaEventSynchronize(resources.ends[i]));
+    });
   }
   checkCudaStatus(cudaDeviceSynchronize());
 
@@ -139,24 +159,26 @@ LtSgemmBenchResult doBenchCuda(F f, int nRepeats, bool flushL2Cache) {
 
 }  // namespace
 
-/// Sample wrapper executing single precision gemm with cublasLtMatmul, nearly a drop-in replacement
-/// for cublasSgemm, with addition of the workspace to support split-K algorithms
-///
-/// pointer mode is always host, to change it configure the appropriate matmul descriptor attribute
-/// matmul is not using cublas handle's configuration of math mode, here tensor ops are implicitly
-/// allowed; to change this configure appropriate attribute in the preference handle
-// Returns GPU time statistics in microseconds; descriptor/algorithm setup is excluded.
-// Like the Python callback, repeated calls mutate C when beta is nonzero.
-LtSgemmBenchResult LtSgemmBench(cublasLtHandle_t ltHandle, cublasOperation_t transa,
-                                cublasOperation_t transb, int m, int n, int k,
-                                const float* alpha, /* host pointer */
-                                const float* A, int lda, const float* B, int ldb,
-                                const float* beta, /* host pointer */
-                                float* C, int ldc, void* workspace, size_t workspaceSize,
-                                int nRepeats, bool flushL2Cache) {
+// Fresh TestBench inputs (including C) are initialized on every iteration.
+// Event statistics exclude allocation, copies, descriptor setup, and cleanup.
+LtSgemmBenchResult LtSgemmBenchFreshAlloc(cublasOperation_t transa,
+                                         cublasOperation_t transb,
+                                         int m, int n, int k,
+                                         float alpha, float beta,
+                                         size_t workspaceSize,
+                                         int nRepeats, bool flushL2Cache) {
+  if (m <= 0 || n <= 0 || k <= 0) {
+    throw std::invalid_argument("matrix dimensions must be positive");
+  }
+  const int lda = transa == CUBLAS_OP_N ? m : k;
+  const int ldb = transb == CUBLAS_OP_N ? k : n;
+  const int ldc = m;
+  BenchResources setup;
   if (nRepeats <= 0) {
     throw std::invalid_argument("repeats must be positive");
   }
+  checkCudaStatus(cudaStreamCreate(&setup.stream));
+  checkCublasStatus(cublasLtCreate(&setup.handle));
   cublasLtMatmulDesc_t operationDesc = NULL;
   cublasLtMatrixLayout_t Adesc = NULL, Bdesc = NULL, Cdesc = NULL;
   cublasLtMatmulPreference_t preference = NULL;
@@ -190,7 +212,7 @@ LtSgemmBenchResult LtSgemmBench(cublasLtHandle_t ltHandle, cublasOperation_t tra
   // we just need the best available heuristic to try and run matmul. There is no guarantee this
   // will work, e.g. if A is badly aligned, you can request more (e.g. 32) algos and try to run them
   // one by one until something works
-  checkCublasStatus(cublasLtMatmulAlgoGetHeuristic(ltHandle,
+  checkCublasStatus(cublasLtMatmulAlgoGetHeuristic(setup.handle,
                                                    operationDesc,
                                                    Adesc,
                                                    Bdesc,
@@ -206,26 +228,32 @@ LtSgemmBenchResult LtSgemmBench(cublasLtHandle_t ltHandle, cublasOperation_t tra
   }
 
   const LtSgemmBenchResult result = doBenchCuda(
-      [&] {
-        checkCublasStatus(cublasLtMatmul(ltHandle,
+      [&](TestBench<float>& props) {
+        checkCublasStatus(cublasLtMatmul(props.ltHandle,
                                          operationDesc,
-                                         alpha,
-                                         A,
+                                         &props.alpha,
+                                         props.Adev,
                                          Adesc,
-                                         B,
+                                         props.Bdev,
                                          Bdesc,
-                                         beta,
-                                         C,
+                                         &props.beta,
+                                         props.Cdev,
                                          Cdesc,
-                                         C,
+                                         props.Cdev,
                                          Cdesc,
                                          &heuristicResult.algo,
-                                         workspace,
+                                         props.workspace,
                                          workspaceSize,
-                                         0));
+                                         props.stream));
+      },
+      [&] {
+        return std::unique_ptr<TestBench<float>>(new TestBench<float>(
+            transa, transb, m, n, k, alpha, beta, workspaceSize,
+            1, false, false, false, setup.stream));
       },
       nRepeats,
-      flushL2Cache);
+      flushL2Cache,
+      setup.stream);
 
   // descriptors are no longer needed as all GPU work was already enqueued
   if (preference)
@@ -239,4 +267,22 @@ LtSgemmBenchResult LtSgemmBench(cublasLtHandle_t ltHandle, cublasOperation_t tra
   if (operationDesc)
     checkCublasStatus(cublasLtMatmulDescDestroy(operationDesc));
   return result;
+}
+
+// Standalone counterpart to main.cpp, using the same profiling workload.
+int main() {
+  const auto start = std::chrono::steady_clock::now();
+  const auto result = LtSgemmBenchFreshAlloc(
+      CUBLAS_OP_N, CUBLAS_OP_N, 65536, 128, 128,
+      2.0f, 0.0f, 4 * 1024 * 1024, 1000, false);
+  const double totalUs = std::chrono::duration<double, std::micro>(
+      std::chrono::steady_clock::now() - start).count();
+  std::printf("Fresh TestBench GEMM (M=65536, N=128, K=128, L2 flush=on): "
+              "%.3f +/- %.3f us, min=%.3f us, median=%.3f us, P99=%.3f us\n",
+              result.averageUs, result.stddevUs, result.minUs,
+              result.medianUs, result.p99Us);
+  std::printf("  Timed GEMM total: %.3f ms, wall time: %.3f ms, GEMM/wall: %.3f%%\n",
+              result.totalGpuUs / 1000.0, totalUs / 1000.0,
+              100.0 * result.totalGpuUs / totalUs);
+  return 0;
 }

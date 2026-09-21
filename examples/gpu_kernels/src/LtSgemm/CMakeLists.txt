@@ -42,4 +42,19 @@ endif()
 target_link_libraries(${PROJECT_NAME}
     ${CUDART_LIBRARY}
     ${CUBLASLT_LIBRARY}
+    ${CMAKE_DL_LIBS}
+)
+
+add_executable(benchmark_cublasLt_LtSgemm_fresh_alloc
+    benchmark_cublasLt_LtSgemm_fresh_alloc.cu
+    ${PROJECT_NAME}.cu
+)
+target_include_directories(benchmark_cublasLt_LtSgemm_fresh_alloc PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Common
+    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+)
+target_link_libraries(benchmark_cublasLt_LtSgemm_fresh_alloc
+    ${CUDART_LIBRARY}
+    ${CUBLASLT_LIBRARY}
+    ${CMAKE_DL_LIBS}
 )

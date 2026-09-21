@@ -22,11 +22,14 @@
 #include <vector>
 #include <functional>
 #include <cstdlib>
+#include <cstdint>
+#include <limits>
 
 #include <cublasLt.h>
 #include <cuda_fp8.h>
 #include <cuda_fp4.h>
 #include <cuda_runtime_api.h>
+#include <nvtx3/nvtx3.hpp>
 
 static size_t roundoff(size_t x, size_t granul) {
     return granul * ((x + (granul - 1)) / granul);
@@ -135,7 +138,8 @@ struct TestBench {
               int N = 1,
               bool ptrArrayBatch = false,
               bool forceOutOfPlace = false,
-              bool groupedBatch = false)
+              bool groupedBatch = false,
+              cudaStream_t sharedStream = nullptr)
         : TestBench(transa,
                     transb,
                     m,
@@ -156,7 +160,8 @@ struct TestBench {
                     CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F,
                     ptrArrayBatch,
                     forceOutOfPlace,
-                    groupedBatch) {
+                    groupedBatch,
+                    sharedStream) {
     }
 
     TestBench(cublasOperation_t transa,
@@ -255,7 +260,8 @@ struct TestBench {
               cublasLtMatmulMatrixScale_t DOutScaleMode,
               bool ptrArrayBatch = false,
               bool forceOutOfPlace = false,
-              bool groupedBatch = false)
+              bool groupedBatch = false,
+              cudaStream_t sharedStream = nullptr)
         : outOfPlace(forceOutOfPlace || !std::is_same<InTypeC, OutType>::value), transa(transa), transb(transb), m(m),
           n(n), k(k), N(N), lda(transa != CUBLAS_OP_N ? k : m), ldb(transb != CUBLAS_OP_N ? n : k), ldc(m), ldd(m),
           alpha(alpha), beta(beta), workspaceSize(workspaceSize), Ahost(sizeofElements<InTypeAB>(m * k * N)),
@@ -291,7 +297,10 @@ struct TestBench {
 
         checkCublasStatus(cublasLtCreate(&ltHandle));
 
-        checkCudaStatus(cudaStreamCreate(&stream));
+        // A supplied stream is borrowed and must outlive this TestBench.
+        ownsStream = sharedStream == nullptr;
+        stream = sharedStream;
+        if (ownsStream) checkCudaStatus(cudaStreamCreate(&stream));
 
         // For Grouped GEMM, the m, n, k are the maximum values across all batches to simplify code
         if (groupedBatch) {
@@ -464,7 +473,10 @@ struct TestBench {
             checkCudaStatus(cudaMalloc(reinterpret_cast<void **>(&DamaxDev), sizeof(ComputeType)));
         }
 
-        fillData();
+        {
+            nvtx3::scoped_range range{"TestBench::fillData"};
+            fillData();
+        }
         fillScales(Ascale, Bscale, Cscale, Dscale);
     }
 
@@ -523,7 +535,7 @@ struct TestBench {
         checkCudaStatus(cudaFree(DscaleDev));
         checkCudaStatus(cudaFree(DOutscaleDev));
         checkCudaStatus(cudaFree(DamaxDev));
-        checkCudaStatus(cudaStreamDestroy(stream));
+        if (ownsStream) checkCudaStatus(cudaStreamDestroy(stream));
     }
 
     void fillData() {
@@ -709,6 +721,7 @@ struct TestBench {
     ComputeType alpha, beta;
 
     cudaStream_t stream;
+    bool ownsStream;
     cublasLtHandle_t ltHandle;
 
     void *workspace;
@@ -765,6 +778,25 @@ struct TestBench {
     std::vector<ScaleType *> AscalePtrArrayHost, BscalePtrArrayHost;
     ScaleType **AscalePtrArrayDev, **BscalePtrArrayDev;
 };
+
+template <> inline void TestBench<float>::fillData() {
+    const auto fill = [](std::vector<float>& values, size_t offset) {
+        // A 32-bit integer-to-float conversion lets the host compiler use SIMD.
+        // Keep the original conversion when any index would exceed uint32_t.
+        if (values.empty()) return;
+        if (values.size() - 1 <= std::numeric_limits<uint32_t>::max() - offset) {
+            for (size_t i = 0; i < values.size(); ++i)
+                values[i] = static_cast<float>(static_cast<uint32_t>(i + offset));
+        } else {
+            for (size_t i = 0; i < values.size(); ++i)
+                values[i] = static_cast<float>(i + offset);
+        }
+    };
+    fill(Ahost, 0);
+    fill(Bhost, 0);
+    fill(Chost, 0);
+    fill(biasHost, 1);
+}
 
 template <> inline void TestBench<__half, __half, float>::fillData() {
     for (size_t i = 0; i < Ahost.size(); i++) Ahost[i] = __float2half_rn(float(i));

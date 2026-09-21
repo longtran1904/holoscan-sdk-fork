@@ -40,8 +40,20 @@ void LtSgemm(cublasLtHandle_t ltHandle,
              void *workspace,
              size_t workspaceSize);
 
-// Average GPU time in microseconds. Repeated GEMMs update C in place.
-float LtSgemmBench(cublasLtHandle_t ltHandle,
+struct LtSgemmBenchResult {
+    float averageUs;
+    float stddevUs;
+    float minUs;
+    float medianUs;
+    float p99Us;
+    double totalGpuUs;  // Sum of timed GEMM event intervals; excludes warmup and cache flushing.
+};
+
+// GPU time statistics in microseconds, with population standard deviation.
+// Median and P99 use linear interpolation at p * (nRepeats - 1).
+// Repeated GEMMs update C in place.
+// Optionally attempt to evict L2 before each timed GEMM (outside the timed interval).
+LtSgemmBenchResult LtSgemmBench(cublasLtHandle_t ltHandle,
                   cublasOperation_t transa,
                   cublasOperation_t transb,
                   int m, int n, int k,
@@ -51,4 +63,5 @@ float LtSgemmBench(cublasLtHandle_t ltHandle,
                   const float *beta,
                   float *C, int ldc,
                   void *workspace, size_t workspaceSize,
-                  int nRepeats = 20);
+                  int nRepeats = 20,
+                  bool flushL2Cache = true);
