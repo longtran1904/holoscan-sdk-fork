@@ -29,7 +29,7 @@ CliResult parse_arguments(int argc, char** argv);
 TimingStatistics calculate_statistics(std::vector<double> timings_us);
 
 void print_device_info(const DeviceInfo& device);
-void print_case_result(const CaseResult& result);
+void print_case_result(const CaseResult& result, int operator_index, int operator_count);
 void print_usage(const char* program);
 void print_argument_error(const char* program, const std::string& argument);
 void print_summary(const RunOptions& options, const RunResult& result);

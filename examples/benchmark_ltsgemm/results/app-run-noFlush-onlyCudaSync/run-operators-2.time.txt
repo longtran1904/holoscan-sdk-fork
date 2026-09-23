@@ -1,0 +1,3 @@
+process_wall_seconds=1.55
+max_rss_kb=958956
+exit_status=0

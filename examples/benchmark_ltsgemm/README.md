@@ -11,11 +11,17 @@ This is an isolated, full-GPU experiment; it does not use CUDA Green Context par
 | D | `benchmark_ltsgemm_native --gemms-per-tick=1000` | One case per tick, 20 operator calls |
 | E | `benchmark_ltsgemm_native --gemms-per-tick=1` (default) | One GEMM per tick, 20,000 operator calls |
 
+Use `--operators=N` to place N identical native operators in the application for contention
+experiments. The default is one. This option does not change the configured scheduler or CUDA
+synchronization behavior.
+
 The wrapper compiles the original `main.cpp` with a target-local entrypoint rename and links the original CUDA sources.
 Both wrapper modes call that same entrypoint once.
 The separate native executable owns matrices, workspace, descriptors, selected algorithm, and events in persistent case state.
 D/E use the same operator implementation and differ only in how many GEMMs each `compute()` launches.
-Each native process uses one application, one portless operator, a CountCondition of 20 or 20,000, and GreedyScheduler.
+Each application instance owns one case configuration and runs a one-time no-op before its
+portless GPU operator. Every GPU operator uses GreedyScheduler and a CountCondition determined by
+the selected GEMMs-per-tick mode.
 The native target never calls the original entrypoint or `LtSgemmBench`; it reuses the helper status checks and the unchanged `LtSgemm` warmup implementation.
 Its float setup mirrors the reference with resource owners that clean up partial initialization. A small adapter also tracks warmup descriptors on failure without editing the reference source.
 No source under `examples/gpu_kernels/src/LtSgemm/`, its shared `Common/helpers.h`, or the CUDA Green Context example needs modification.
@@ -38,7 +44,8 @@ The original comparisons are `C/A`, `B/A`, and `C/B`. With native runs enabled, 
 GPU-event intervals, original case wall times, wrapper entrypoint time, Holoscan application-run time, and external process time have different boundaries.
 GPU-event intervals exclude gaps between repetitions, including the time between Holoscan ticks.
 Case wall time includes those gaps, setup, transfers, warmup, cache handling, statistics, and cleanup.
-The entrypoint timer includes the full sweep and its printing; the application-run timer surrounds `app->run()`.
+The entrypoint timer includes the full sweep and its printing; the native application-run timer
+sums the 20 `app->run()` calls.
 External process time includes launch, dynamic loading, startup, and shutdown.
 Native runs have no original-entrypoint timer. Differences are observed execution costs, not a pure scheduler-overhead measurement.
 
@@ -138,7 +145,7 @@ A one-trial A/B/C smoke run has 3 successful processes and 60 case records.
 A ten-trial A/B/C campaign has 30 successful processes and 600 case records.
 With native modes, smoke produces 5 successful processes and 100 case records; ten trials produce 50 processes and 1,000 case records.
 Each native process must report exactly 20 completed cases and 20,000 timed GEMMs.
-Its separate `LT_SGEMM_NATIVE` JSON completion record includes `gemms_per_tick`, `completed_cases`, `timed_gemms`, actual `compute_calls`, `app_run_wall_ms`, `completed`, and `return_code` (schema version 1).
+Its separate `LT_SGEMM_NATIVE` JSON completion record includes `gemms_per_tick`, `operator_count`, `completed_cases`, `timed_gemms`, actual `compute_calls`, `app_run_wall_ms`, `completed`, and `return_code` (schema version 2).
 D must report 20 compute calls; E must report 20,000. The manifest stores this as `native_record`, separately from wrapper records.
 Failures report unsuccessful completion and return nonzero; invalid arguments return 2. Warmup GEMMs are excluded from the timed count.
 P99 summaries describe ratios of each process's P99, not a P99 calculated by pooling unavailable samples.
@@ -148,6 +155,22 @@ Missing/duplicate cases, malformed/non-finite measurements, failed processes, ti
 The script exits unsuccessfully, marks the manifest failed, and retains logs rather than silently dropping trials or filling missing values with zero.
 Unavailable metadata probes are recorded as unavailable; inspect them before making attribution claims.
 The script records competing GPU activity but does not reserve the GPU or guarantee that it remained idle between snapshots.
+
+### Native operator count sweep
+
+`scripts/run_native_operators.sh` runs the operator counts configured in the script and saves
+each run under `results/app-run-*`. Its `benchmark-env/bin/python3` needs Matplotlib (and a compatible
+NumPy installation); the script checks that Matplotlib imports before starting GPU work.
+Each run folder contains `comparison.csv`, `median_per_operator_gemm_latency.png` (the median
+of operator GEMM medians, in microseconds), and `median_per_operator_latency.png` (the median
+operator wall interval, in seconds). `p99_per_operator_gemm_latency.png` shows every operator's
+printed GEMM P99 latency for each run and the median at each operator count. All plots are made
+from the CSV after summarization and
+before report generation. To plot an older run folder, rerun
+`python3 scripts/summarize_native_operators.py <run-folder>` to add the new CSV column, then run
+`benchmark-env/bin/python3 scripts/plot_native_operator_latencies.py <run-folder>`.
+The CSV's `operator_p99_us` cell is a JSON array of the printed GEMM P99 latencies, ordered by
+operator number; `median_operator_p99_us` remains their median.
 
 ## Tests
 
@@ -188,8 +211,8 @@ the final status. Its private modules in `cpp/native/` are compiled only into th
 
 The application and operator receive immutable options separately from mutable run results.
 Each tick delegates to `BenchmarkCase::launch()`; the final tick calls `finish()`, destroys the
-case's host vectors, then ends the case wall timer and reports the result. Application timing
-still surrounds `app->run()`. The CUDA warmup adapter remains in `cpp/native_warmup.cu`.
+case's host vectors, then ends the case wall timer and reports the result. Application timing is
+the sum of the 20 `app->run()` calls. The CUDA warmup adapter remains in `cpp/native_warmup.cu`.
 These modules add no SDK API and do not change the reference executable or wrapper.
 
 ## Recorded experiment

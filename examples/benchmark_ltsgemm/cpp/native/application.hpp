@@ -12,7 +12,7 @@
 
 namespace ltsgemm::native {
 
-// Measures app->run() and retains failures, including exceptions caught by the executor.
+// Sums the per-case app->run() timings and retains failures caught by the executor.
 void run_application(const RunOptions& options, const std::shared_ptr<RunResult>& result);
 
 }  // namespace ltsgemm::native

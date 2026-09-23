@@ -17,16 +17,14 @@ DeviceInfo query_device_info();
 
 class BenchmarkCase {
  public:
-  explicit BenchmarkCase(CaseConfig config);
+  BenchmarkCase(int m, bool flush_l2);
   ~BenchmarkCase();
   BenchmarkCase(const BenchmarkCase&) = delete;
   BenchmarkCase& operator=(const BenchmarkCase&) = delete;
 
   void launch();
   bool complete() const;
-  TimingStatistics finish();
-  Clock::time_point start_time() const;
-  CaseConfig config() const;
+  CaseResult finish();
 
  private:
   struct State;

@@ -45,8 +45,9 @@ def wrapper(runner="direct", **changes):
 
 def native(count=1, **changes):
     result = dict(
-        schema_version=1,
+        schema_version=2,
         gemms_per_tick=count,
+        operator_count=1,
         completed_cases=20,
         timed_gemms=20000,
         compute_calls=20000 // count,
@@ -71,11 +72,12 @@ class ParserTests(unittest.TestCase):
         for count in (1, 1000):
             invalid = ["", native(count) * 2, wrapper("holoscan"), "LT_SGEMM_NATIVE bad\n"]
             for field, values in {
-                "schema_version": (True, 2),
+                "schema_version": (True, 1, 3),
                 "completed_cases": (19, 21, True, 20.0),
                 "timed_gemms": (19999, 20001, True, 20000.0),
                 "compute_calls": (0, 20000 // count + 1, True, 20000 / count),
                 "gemms_per_tick": (2, True, 1000 if count == 1 else 1),
+                "operator_count": (0, 2, True, 1.0),
                 "completed": (False, 1),
                 "return_code": (1, False),
                 "app_run_wall_ms": (0, -1, math.nan, math.inf, True),

@@ -97,8 +97,9 @@ def parse_output(text, runner):
         timing = native_records[0]
         count = NATIVE_MODES[runner]
         for key, expected in (
-            ("schema_version", 1),
+            ("schema_version", 2),
             ("gemms_per_tick", count),
+            ("operator_count", 1),
             ("completed_cases", 20),
             ("timed_gemms", 20000),
             ("compute_calls", 20000 // count),
@@ -468,7 +469,13 @@ def write_reports(output, runs):
             process.update(
                 {
                     key: run.get("native_record", {}).get(key, "")
-                    for key in ("gemms_per_tick", "completed_cases", "timed_gemms", "compute_calls")
+                    for key in (
+                        "gemms_per_tick",
+                        "operator_count",
+                        "completed_cases",
+                        "timed_gemms",
+                        "compute_calls",
+                    )
                 }
             )
         processes.append(process)

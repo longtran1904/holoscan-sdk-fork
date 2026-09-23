@@ -7,19 +7,16 @@
 #define EXAMPLES_BENCHMARK_LTSGEMM_CPP_NATIVE_TYPES_HPP
 
 #include <exception>
+#include <mutex>
 
 namespace ltsgemm::native {
 
-constexpr int kCases = 20;
+constexpr int kCases = 1;
 constexpr int kRepeats = 1000;
 
 struct RunOptions {
   int gemms_per_tick = 1;
-};
-
-struct CaseConfig {
-  int m;
-  bool flush_l2;
+  int operator_count = 1;
 };
 
 struct DeviceInfo {
@@ -36,12 +33,14 @@ struct TimingStatistics {
 };
 
 struct CaseResult {
-  CaseConfig config;
+  int m;
+  bool flush_l2;
   TimingStatistics statistics;
   double wall_ms;
 };
 
 struct RunResult {
+  std::mutex counter_mutex;
   int completed_cases = 0;
   int timed_gemms = 0;
   int compute_calls = 0;

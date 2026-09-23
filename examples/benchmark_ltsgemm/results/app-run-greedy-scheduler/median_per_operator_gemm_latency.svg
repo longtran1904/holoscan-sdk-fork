@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-label="Line chart of median per-operator GEMM latency by number of operators">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g font-family="DejaVu Sans, Arial, sans-serif" fill="#182433">
+<text x="120" y="48" font-size="27" font-weight="bold">Median per-operator GEMM latency</text>
+<text x="120" y="78" font-size="15" fill="#526174">Median across operators of each operator’s median over 1,000 GEMMs · M=65536, N=K=128 · L2 flush on</text>
+<text x="120" y="102" font-size="13" fill="#526174">One benchmark run per operator count · 21 Sep 2026 · y-axis starts at 500 µs</text>
+<line x1="120" y1="525.0" x2="1040" y2="525.0" stroke="#e4eaf1" stroke-width="1"/>
+<text x="105" y="530.0" text-anchor="end" font-size="14" fill="#526174">500</text>
+<line x1="120" y1="469.3" x2="1040" y2="469.3" stroke="#e4eaf1" stroke-width="1"/>
+<text x="105" y="474.3" text-anchor="end" font-size="14" fill="#526174">505</text>
+<line x1="120" y1="413.6" x2="1040" y2="413.6" stroke="#e4eaf1" stroke-width="1"/>
+<text x="105" y="418.6" text-anchor="end" font-size="14" fill="#526174">510</text>
+<line x1="120" y1="357.9" x2="1040" y2="357.9" stroke="#e4eaf1" stroke-width="1"/>
+<text x="105" y="362.9" text-anchor="end" font-size="14" fill="#526174">515</text>
+<line x1="120" y1="302.1" x2="1040" y2="302.1" stroke="#e4eaf1" stroke-width="1"/>
+<text x="105" y="307.1" text-anchor="end" font-size="14" fill="#526174">520</text>
+<line x1="120" y1="246.4" x2="1040" y2="246.4" stroke="#e4eaf1" stroke-width="1"/>
+<text x="105" y="251.4" text-anchor="end" font-size="14" fill="#526174">525</text>
+<line x1="120" y1="190.7" x2="1040" y2="190.7" stroke="#e4eaf1" stroke-width="1"/>
+<text x="105" y="195.7" text-anchor="end" font-size="14" fill="#526174">530</text>
+<line x1="120" y1="135.0" x2="1040" y2="135.0" stroke="#e4eaf1" stroke-width="1"/>
+<text x="105" y="140.0" text-anchor="end" font-size="14" fill="#526174">535</text>
+<line x1="120" y1="135" x2="120" y2="525" stroke="#63758a"/>
+<line x1="120" y1="525" x2="1040" y2="525" stroke="#63758a"/>
+<polyline points="120.0,238.0 273.3,267.4 426.7,236.2 580.0,259.2 733.3,340.7 886.7,345.3 1040.0,344.4" fill="none" stroke="#2563b4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="120.0" cy="238.0" r="6" fill="#2563b4" stroke="white" stroke-width="2"><title>1 operators: 525.760 µs</title></circle>
+<text x="120.0" y="221.0" text-anchor="middle" font-size="14" font-weight="bold" fill="#17467d">525.76</text>
+<text x="120.0" y="553" text-anchor="middle" font-size="14">1</text>
+<circle cx="273.3" cy="267.4" r="6" fill="#2563b4" stroke="white" stroke-width="2"><title>2 operators: 523.120 µs</title></circle>
+<text x="273.3" y="250.4" text-anchor="middle" font-size="14" font-weight="bold" fill="#17467d">523.12</text>
+<text x="273.3" y="553" text-anchor="middle" font-size="14">2</text>
+<circle cx="426.7" cy="236.2" r="6" fill="#2563b4" stroke="white" stroke-width="2"><title>4 operators: 525.920 µs</title></circle>
+<text x="426.7" y="219.2" text-anchor="middle" font-size="14" font-weight="bold" fill="#17467d">525.92</text>
+<text x="426.7" y="553" text-anchor="middle" font-size="14">4</text>
+<circle cx="580.0" cy="259.2" r="6" fill="#2563b4" stroke="white" stroke-width="2"><title>8 operators: 523.856 µs</title></circle>
+<text x="580.0" y="242.2" text-anchor="middle" font-size="14" font-weight="bold" fill="#17467d">523.86</text>
+<text x="580.0" y="553" text-anchor="middle" font-size="14">8</text>
+<circle cx="733.3" cy="340.7" r="6" fill="#2563b4" stroke="white" stroke-width="2"><title>16 operators: 516.544 µs</title></circle>
+<text x="733.3" y="323.7" text-anchor="middle" font-size="14" font-weight="bold" fill="#17467d">516.54</text>
+<text x="733.3" y="553" text-anchor="middle" font-size="14">16</text>
+<circle cx="886.7" cy="345.3" r="6" fill="#2563b4" stroke="white" stroke-width="2"><title>32 operators: 516.128 µs</title></circle>
+<text x="886.7" y="328.3" text-anchor="middle" font-size="14" font-weight="bold" fill="#17467d">516.13</text>
+<text x="886.7" y="553" text-anchor="middle" font-size="14">32</text>
+<circle cx="1040.0" cy="344.4" r="6" fill="#2563b4" stroke="white" stroke-width="2"><title>64 operators: 516.208 µs</title></circle>
+<text x="1040.0" y="327.4" text-anchor="middle" font-size="14" font-weight="bold" fill="#17467d">516.21</text>
+<text x="1040.0" y="553" text-anchor="middle" font-size="14">64</text>
+<text x="580" y="585" text-anchor="middle" font-size="17">Number of operators in one run</text>
+<text x="38" y="330" text-anchor="middle" font-size="17" transform="rotate(-90 38 330)">Latency (µs)</text>
+<text x="120" y="627" font-size="12" fill="#526174">Source: completed run stdout logs in this folder. Each point summarizes one run.</text>
+</g></svg>

@@ -141,7 +141,7 @@ class NativeRunnerTests(RunnerAssertions, unittest.TestCase):
     def setUpClass(cls):
         cls.binary = Path(os.environ["LTSGEMM_NATIVE_BINARY"]).resolve(strict=True)
 
-    def assert_native_summary(self, process, count, completed):
+    def assert_native_summary(self, process, count, completed, operator_count=1):
         prefix = "LT_SGEMM_NATIVE "
         records = [
             line[len(prefix) :] for line in process.stdout.splitlines() if line.startswith(prefix)
@@ -154,6 +154,7 @@ class NativeRunnerTests(RunnerAssertions, unittest.TestCase):
             {
                 "schema_version",
                 "gemms_per_tick",
+                "operator_count",
                 "completed_cases",
                 "timed_gemms",
                 "compute_calls",
@@ -162,8 +163,9 @@ class NativeRunnerTests(RunnerAssertions, unittest.TestCase):
                 "return_code",
             },
         )
-        self.assertEqual(record["schema_version"], 1)
+        self.assertEqual(record["schema_version"], 2)
         self.assertEqual(record["gemms_per_tick"], count)
+        self.assertEqual(record["operator_count"], operator_count)
         self.assertIs(record["completed"], completed)
         self.assertEqual(record["return_code"], process.returncode)
         self.assertEqual(process.returncode == 0, completed)
@@ -172,9 +174,9 @@ class NativeRunnerTests(RunnerAssertions, unittest.TestCase):
         for field in ("completed_cases", "timed_gemms", "compute_calls"):
             self.assertIs(type(record[field]), int)
         if completed:
-            self.assertEqual(record["completed_cases"], 20)
-            self.assertEqual(record["timed_gemms"], 20000)
-            self.assertEqual(record["compute_calls"], 20000 // count)
+            self.assertEqual(record["completed_cases"], operator_count)
+            self.assertEqual(record["timed_gemms"], 1000 * operator_count)
+            self.assertEqual(record["compute_calls"], 1000 * operator_count // count)
         return record
 
     def test_help_without_gpu(self):
@@ -183,6 +185,7 @@ class NativeRunnerTests(RunnerAssertions, unittest.TestCase):
             ("--gemms-per-tick=1000",),
             ("--help",),
             ("--help", "--gemms-per-tick=1"),
+            ("--operators=4",),
         ):
             process = self.run_binary(self.binary, *option, "--help", hide_gpu=True)
             self.assertEqual(process.returncode, 0, process.stderr)
@@ -196,6 +199,9 @@ class NativeRunnerTests(RunnerAssertions, unittest.TestCase):
             (("--gemms-per-tick=2",), 1, "--gemms-per-tick=2"),
             (("--gemms-per-tick=",), 1, "--gemms-per-tick="),
             (("--gemms-per-tick=1x",), 1, "--gemms-per-tick=1x"),
+            (("--operators=0",), 1, "--operators=0"),
+            (("--operators=",), 1, "--operators="),
+            (("--operators=1x",), 1, "--operators=1x"),
             (("--unknown",), 1, "--unknown"),
             (("--help", "--unknown"), 1, "--unknown"),
             (("--gemms-per-tick=1", "--gemms-per-tick=1000"), 1, "--gemms-per-tick=1000"),
@@ -219,27 +225,34 @@ class NativeRunnerTests(RunnerAssertions, unittest.TestCase):
                 self.assertNotIn("cuda API failed", process.stdout + process.stderr)
 
     def test_cuda_failure_and_default_mode(self):
-        for args, count in (
-            ((), 1),
-            (("--gemms-per-tick=1",), 1),
-            (("--gemms-per-tick=1000",), 1000),
+        for args, count, operator_count in (
+            ((), 1, 1),
+            (("--gemms-per-tick=1",), 1, 1),
+            (("--gemms-per-tick=1000",), 1000, 1),
+            (("--operators=2",), 1, 2),
         ):
             with self.subTest(args=args):
                 process = self.run_binary(self.binary, *args, hide_gpu=True)
-                record = self.assert_native_summary(process, count, False)
+                record = self.assert_native_summary(process, count, False, operator_count)
                 self.assertEqual(record["completed_cases"], 0)
                 self.assertEqual(record["timed_gemms"], 0)
-                self.assertEqual(record["compute_calls"], 1)
+                self.assertGreaterEqual(record["compute_calls"], 1)
+                self.assertLessEqual(record["compute_calls"], operator_count)
                 self.assertNotIn("GEMM (", process.stdout)
 
     @unittest.skipUnless(os.environ.get("LTSGEMM_GPU_TESTS") == "1", "set LTSGEMM_GPU_TESTS=1")
-    def test_both_native_modes_complete_the_sweep(self):
-        for count in (1000, 1):
-            with self.subTest(count=count):
-                process = self.run_binary(self.binary, f"--gemms-per-tick={count}")
-                self.assert_native_summary(process, count, True)
-                self.assertEqual(CASE.findall(process.stdout), EXPECTED_CASES)
-                self.assertEqual(process.stdout.count("  Timed GEMM total:"), 20)
+    def test_native_modes_and_operator_counts(self):
+        for count, operator_count in ((1000, 1), (1, 1), (1000, 2), (1, 8)):
+            with self.subTest(count=count, operator_count=operator_count):
+                process = self.run_binary(
+                    self.binary, f"--gemms-per-tick={count}", f"--operators={operator_count}"
+                )
+                self.assert_native_summary(process, count, True, operator_count)
+                self.assertEqual(
+                    CASE.findall(process.stdout),
+                    [("65536", "128", "128", "on")] * operator_count,
+                )
+                self.assertEqual(process.stdout.count("  Timed GEMM total:"), operator_count)
 
 
 if __name__ == "__main__":

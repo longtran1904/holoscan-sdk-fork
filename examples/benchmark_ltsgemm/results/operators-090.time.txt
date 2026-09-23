@@ -1,0 +1,5 @@
+process_wall_seconds=68.29
+user_seconds=7.53
+system_seconds=2.74
+max_rss_kb=6687580
+exit_status=0
