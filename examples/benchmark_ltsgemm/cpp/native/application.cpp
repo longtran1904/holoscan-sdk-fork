@@ -11,6 +11,7 @@
 #include <optional>
 #include <utility>
 
+#include <cuda_runtime_api.h>
 #include <holoscan/holoscan.hpp>
 
 #include "execution.hpp"
@@ -34,8 +35,9 @@ class NativeLtSgemmOp : public holoscan::Operator {
   void initialize() override { Operator::initialize(); }
 
   void compute(holoscan::InputContext&, holoscan::OutputContext&,
-               holoscan::ExecutionContext&) override {
+               holoscan::ExecutionContext& context) override {
     bool first_call;
+    cudaStream_t stream_ = nullptr;
     {
       std::lock_guard<std::mutex> lock(result_->counter_mutex);
       first_call = ++result_->compute_calls == 1;
@@ -46,9 +48,19 @@ class NativeLtSgemmOp : public holoscan::Operator {
       if (first_call) {
         print_device_info(query_device_info());
       }
-      if (!case_) {
-        case_.emplace(m_, flush_l2_);
+      if (!stream_) {
+        auto maybe_stream = context.allocate_cuda_stream("source_stream_" +
+                                                         std::to_string(options_.operator_count));
+        if (!maybe_stream) {
+          throw std::runtime_error("Failed to allocate CUDA stream");
+        }
+        stream_ = maybe_stream.value();
       }
+
+      if (!case_) {
+        case_.emplace(m_, flush_l2_, stream_);
+      }
+
       for (int i = 0; i < options_.gemms_per_tick; ++i) {
         case_->launch();
         {
@@ -86,6 +98,14 @@ class NativeLtSgemmApp : public holoscan::Application {
       : options_(options), result_(std::move(result)), m_(m), flush_l2_(flush_l2) {}
 
   void compose() override {
+    const auto cuda_stream_pool =
+        make_resource<holoscan::CudaStreamPool>("stream_pool",
+                                                holoscan::Arg("dev_id", 0),
+                                                holoscan::Arg("stream_flags", 0u),
+                                                holoscan::Arg("stream_priority", 0),
+                                                holoscan::Arg("reserved_size", 1u),
+                                                holoscan::Arg("max_size", options_.operator_count));
+
     for (int i = 0; i < options_.operator_count; ++i) {
       auto op = make_operator<NativeLtSgemmOp>(
           "ltsgemm_" + std::to_string(i),
@@ -156,7 +176,7 @@ void run_application(const RunOptions& options, const std::shared_ptr<RunResult>
   try {
     holoscan::set_log_level(holoscan::LogLevel::OFF);
     const int m = 65536;
-    const bool flush_l2 = true;
+    const bool flush_l2 = false;
     auto app = holoscan::make_application<NativeLtSgemmApp>(options, result, m, flush_l2);
     const auto start = Clock::now();
     try {

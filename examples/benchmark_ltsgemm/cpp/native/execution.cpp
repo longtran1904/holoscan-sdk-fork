@@ -112,7 +112,7 @@ struct Matmul {
                                      &heuristic.algo,
                                      matrices.workspace,
                                      matrices.workspaceSize,
-                                     0));
+                                     matrices.stream));
   }
 
   void close() {
@@ -154,6 +154,7 @@ struct BenchmarkCase::State {
   const Clock::time_point start = Clock::now();
   const int m;
   const bool flush;
+  const cudaStream_t stream;
   std::optional<Matrices> matrices;
   Matmul matmul;
   Buffer cache;
@@ -165,11 +166,12 @@ struct BenchmarkCase::State {
   double flush_sync_total_ms = 0;
   double midpoint_sync_ms = 0;
 
-  State(int rows, bool flush_l2)
+  State(int rows, bool flush_l2, cudaStream_t cuda_stream)
       : m(rows),
         flush(flush_l2),
+        stream(cuda_stream),
         matrices(std::in_place, CUBLAS_OP_N, CUBLAS_OP_N, rows, 128, 128, 2.0f, 0.0f,
-                 kWorkspaceBytes) {
+                 kWorkspaceBytes, false, false, false, cuda_stream) {
     matrices->copyDataToDevice();
     matmul.initialize(*matrices);
     warmup_sync_ms = warmup();
@@ -193,7 +195,7 @@ struct BenchmarkCase::State {
   void launch() {
     if (flush) {
       checkCudaStatus(cudaMemsetAsync(cache.value, 0, cache_size, 0));
-      // flush_sync_total_ms += timed_device_synchronize();
+      flush_sync_total_ms += timed_device_synchronize();
     }
     checkCudaStatus(cudaEventRecord(starts[repetitions].value, 0));
     matmul.launch(*matrices);
@@ -249,7 +251,8 @@ DeviceInfo query_device_info() {
   return {properties.l2CacheSize};
 }
 
-BenchmarkCase::BenchmarkCase(int m, bool flush_l2) : state_(std::make_unique<State>(m, flush_l2)) {}
+BenchmarkCase::BenchmarkCase(int m, bool flush_l2, cudaStream_t stream)
+    : state_(std::make_unique<State>(m, flush_l2, stream)) {}
 
 BenchmarkCase::~BenchmarkCase() = default;
 

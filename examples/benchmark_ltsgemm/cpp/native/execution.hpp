@@ -6,6 +6,7 @@
 #ifndef EXAMPLES_BENCHMARK_LTSGEMM_CPP_NATIVE_EXECUTION_HPP
 #define EXAMPLES_BENCHMARK_LTSGEMM_CPP_NATIVE_EXECUTION_HPP
 
+#include <cuda_runtime_api.h>
 #include <memory>
 
 #include "timing.hpp"
@@ -17,7 +18,7 @@ DeviceInfo query_device_info();
 
 class BenchmarkCase {
  public:
-  BenchmarkCase(int m, bool flush_l2);
+  BenchmarkCase(int m, bool flush_l2, cudaStream_t stream);
   ~BenchmarkCase();
   BenchmarkCase(const BenchmarkCase&) = delete;
   BenchmarkCase& operator=(const BenchmarkCase&) = delete;
