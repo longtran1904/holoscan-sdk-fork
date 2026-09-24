@@ -1,0 +1,4 @@
+Command exited with non-zero status 1
+process_wall_seconds=1.55
+max_rss_kb=630340
+exit_status=1

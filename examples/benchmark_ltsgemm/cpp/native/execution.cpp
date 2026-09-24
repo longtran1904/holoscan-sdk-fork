@@ -171,7 +171,7 @@ struct BenchmarkCase::State {
         flush(flush_l2),
         stream(cuda_stream),
         matrices(std::in_place, CUBLAS_OP_N, CUBLAS_OP_N, rows, 128, 128, 2.0f, 0.0f,
-                 kWorkspaceBytes, false, false, false, cuda_stream) {
+                 kWorkspaceBytes, 1, false, false, false, cuda_stream) {
     matrices->copyDataToDevice();
     matmul.initialize(*matrices);
     warmup_sync_ms = warmup();
